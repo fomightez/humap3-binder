@@ -18,3 +18,8 @@ You can also easily adapt the demonstrations to analyze your favorite proteins.
 
 Meant to be self-contained and ready-to-go. No installations or copying of notebooks is necessary if `launch binder` is clicked. Everything will just work. Of course, static versions of the notebooks can also be used. I recommend rendering the static versions by placing the URLs into the [nbviewer](https://nbviewer.jupyter.org/). The views provided by [nbviewer](https://nbviewer.jupyter.org/) look best and Github's rendering often times out (your mileage may vary).
 
+-----
+
+#### Related
+
+[my Unipressed-binder]https://github.com/fomightez/Unipressed-binder) demonstrating using the packaging Unipressed to access information from UniProt.
