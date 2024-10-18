@@ -1,8 +1,8 @@
 numpy
 pandas
+unipressed
 matplotlib
 biopython
-intermine
 seaborn
 scipy
 statsmodels
@@ -12,6 +12,5 @@ sh
 snakemake
 jupytext
 rich
-BeautifulSoup4
-html2text
+
 
