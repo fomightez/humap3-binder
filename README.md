@@ -1,7 +1,7 @@
 # humap3-binder
 Analysis of hu.MAP 3.0-related data via active Jupyter sessions provided via MyBinder.org. Adapt the demonstrations to analyze your favorite proteins and create reports.
 
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/fomightez/humap3-binder/main?urlpath=%2Fnotebooks%2Findex.ipynb)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/fomightez/humap3-binder/main?urlpath=%2Flab%2Ftree%2Findex.ipynb)
 
 
 *tl;dr:*  
