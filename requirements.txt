@@ -11,6 +11,7 @@ nbgitpuller
 openpyxl
 sh
 snakemake
+pulp==2.7.0
 jupytext
 rich
 
