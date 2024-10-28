@@ -22,4 +22,4 @@ Meant to be self-contained and ready-to-go. No installations or copying of noteb
 
 #### Related
 
-[my Unipressed-binder]https://github.com/fomightez/Unipressed-binder) demonstrating using the packaging Unipressed to access information from UniProt.
+[my Unipressed-binder](https://github.com/fomightez/Unipressed-binder) demonstrates using the package Unipressed to access information from UniProt.
