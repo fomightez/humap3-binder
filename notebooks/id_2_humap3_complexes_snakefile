@@ -1,0 +1,550 @@
+# Snakemake pipeline for generating summary reports about proteins in hu.MAP 3.0 
+# complexes.
+# See https://github.com/fomightez/humap3-binder
+# Needs standard packages for Jupytext and Pandas.
+# The user has to provide a list in a file 
+#`Make_me_humap3_complex_reports_for_these.txt` 
+# where each element on a separate line is an identifier.
+# 
+# Ezample
+# To help clarify that, the following code between the dashed lines
+# can have the starting `#`s removed at the start of each line and that code can 
+# be run in a Jupyter notebook to make such a file with the list of identifiers,
+# each on a separate line:
+#-------------------------
+#%writefile Make_me_humap3_complex_reports_for_these.txt
+#FBL
+#Q9NX24
+#XRN1
+#-------------------------
+# 
+# 
+# See the accompanying notebook entitled 
+# `Making_many_hu.MAP3_reports_easily_using_Snakemake.ipynb` for a demo.
+# This file can be run after making the text table 
+# `Make_me_humap3_complex_reports_for_these.txt` by calling
+# `!snakemake -s id_2_humap3_complexes_snakefile` from inside a jupyter notebook 
+# or run via 
+# `!snakemake -s id_2_humap3_complexes_snakefile` on the command line.
+# Via MyBinder, run this Snakefile with the following:
+# !snakemake -s id_2_humap3_complexes_snakefile --cores 1
+# Only 1 core, because I think when I was using 8 it would commonly cause a race
+# where more than one notebook was getting auxillary scripts and overwriting as
+# as the other notebooks was trying to use. More reliable with 1. But if it, did 
+# fail when using more cores, try re-running again because it should just 
+# complete the missing files.
+# For cleaning, there won't be any conflicts, so use the following on MyBinder:
+# !snakemake  -s id_2_humap3_complexes_snakefile clean --cores 8
+# More general info:
+# If you had a ton of comparisons to process and wanted to take advantage of 
+# parallel processing in the snakemake run you can read this section:
+# Initiate with `snakemake -s id_2_humap3_complexes_snakefile -j X`, replacing 
+# the `X` with the number of cores available. Otherwise, initiate with 
+# To just initiate a rule/step, run something like:
+# `snakemake -s id_2_humap3_complexes_snakefile -j 8 <name_of_rule>`, where the 
+# number 8 is replaced by the  result of the command `getconf _NPROCESSORS_ONLN`.
+#
+#Note for Wayne, this is largely based on the Snakefile in my pdbsum-binder repo.
+
+import os
+import sys
+import datetime
+now = datetime.datetime.now()
+import rich
+import pandas as pd
+import nbformat as nbf
+
+
+# GET THE DATA & SCRIPT THAT WILL ASSIST ---------------------------------------
+# This way they can be used as input to a rule and if they are changed the
+# approrpriate parts of the workflow will be rerun.
+# The data & script to read it will be needed for the 
+# 'INPUT IDENTIFIERS LIST FROM USER-PROVIDED FILE' step and so this has to be
+# done before that step.
+csv_file_raw_data = "hu.MAP3.0_complexes_wConfidenceScores_total15326_wGenenames_20240922InOrderMatched.csv"
+if not os.path.isfile(csv_file_raw_data):
+    os.system("curl -OL https://raw.githubusercontent.com/"\
+        "fomightez/humap3-binder/refs/heads/main/standardizing_initial_data/"\
+        f"{csv_file_raw_data}")
+file_needed = "complexes_rawCSV_to_df.py"
+if not os.path.isfile(file_needed):
+    os.system("curl -OL https://raw.githubusercontent.com/"\
+        "fomightez/structurework/refs/heads/master/"\
+        f"humap3-utilities/{file_needed}")
+
+
+
+# INPUT IDENTIFIERS LIST FROM USER-PROVIDED FILE--------------------------------
+# Users provide the information as file with IDs listed each on a line. See 
+# above for the format of that.
+# I'm bringing it in here so that I can generate the names of the notebooks that
+# need to be made. So that I can use these in snakemake as input and later even
+# as output.
+# For now the file with the table must be named 
+# `Make_me_humap3_complex_reports_for_these.txt`.
+
+text_file_to_use  = "Make_me_humap3_complex_reports_for_these.txt" # name of 
+# the text file with identifier on each row to make a Jupyter notebook with 
+# the reports as content
+column_names=(["identifier"])
+df = pd.read_table(text_file_to_use, 
+    names=column_names, index_col=None,  sep='\s+')
+# Because the user may use an ID that isn't in the data and that will cause an 
+# error if try to look for that in UniProt and cause the report notebook meant 
+# to run to error out and then the snakemake file to stop running. So to avoid 
+# all that, checking now if the IDs are in the data file of the complexes and 
+# removing it from the dataframe if not there, with notice to the user. This way
+# the user can abort the pipeline at this point or let it run and at least get 
+# data for any other identifiers that have complex data represented.
+# To do this validation: 
+# Iterate on the `ids` and check if present in the 'in-order matched' CSV data, 
+# which will need to be read in. Next couple of lines will handle reading it in. 
+# When iterating alert user to any identifiers removed.
+os.system(f"uv run complexes_rawCSV_to_df.py {csv_file_raw_data}")
+print("\n") # add exta line break to set up for next `print()`; otherwise prints
+# far over on right
+rd_df = pd.read_pickle('raw_complexes_pickled_df.pkl')
+text_to_check_ids_in = " ".join(rd_df['Uniprot_ACCs'].to_list())
+text_to_check_ids_in += " ".join(rd_df['genenames'].to_list())
+to_drop = []
+for idx, row in df.iterrows():
+    current_id = row['identifier']
+    # Check if ID exists in either column, using string content to allow for both space and semicolon separators
+    found = (rd_df['Uniprot_ACCs'].str.contains(current_id, regex=False).any() or 
+            rd_df['genenames'].str.contains(current_id, regex=False).any())
+    if not found:
+        rich.print(f"Warning: Identifier '{current_id}' not found in the reference columns 'Uniprot_ACCs' or 'genenames'.\nThat identifier '{current_id}' will be removed from consideration here.")
+        to_drop.append(idx)
+if to_drop:
+    df = df.drop(to_drop).reset_index(drop=True)
+    rich.print(f"Removed {len(to_drop)} identifiers total")
+rich.print(f"Initial preparation steps complete...progressing on to Snakemake rules...")
+# Use that now-validated dataframe to define `nb_files` and 
+# the `processed_nb_files`
+prefix_to_use_for_report_nbs = "Summary_report_humap3_data_for_"
+nb_files = []
+py_files = []
+#nb_files_without_py = []
+for indx,row in df.iterrows():
+    main = (f'{"_".join(row.tolist())}')
+    nb_name = f"{prefix_to_use_for_report_nbs}{row.identifier}.ipynb"
+    py_name = f"{prefix_to_use_for_report_nbs}{row.identifier}.py"
+    nb_files.append(nb_name)
+    py_files.append(py_name)
+unprocessed_nb_files = [f"unprocessed_{x}" for x in nb_files]
+
+
+
+
+
+
+# FILES THAT WILL BE GENERATED--------------------------------------------------
+# py_files #Python versions that are easier to paste here that will be converted
+# to the notebooks by jupytext
+#nb_files # the run notebooks generated by running jupytext with the `py_files`
+results_archive = f"complexes_reports_nbs{now.strftime('%b%d%Y%H%M')}.tar.gz"#
+#archive of processed notebooks for downloading
+
+
+
+
+
+# Additional, special settings--------------------------------------------------
+# note:  the cell number  and cell content are standardized.  For here, it makes 
+# sense and is way more direct to use a SINGLE standardized template text file 
+# (actually python script code underlying) and use Jupytext to convert it into a 
+# notebook. I had to FURTHER EDIT THE STUB TO MAKE IT PASTEABLE HERE THOUGH, by
+# removing the code I left in that I had effectively commented out by putting it 
+# in a docstring. 
+# RELATED: see stuff about 'DOCSTRING' in the Snakefile in pdbsum-binder
+
+nb_stub_as_py='''# ---
+# jupyter:
+#   jupytext:
+#     text_representation:
+#       extension: .py
+#       format_name: light
+#       format_version: '1.5'
+#       jupytext_version: 1.16.4
+#   kernelspec:
+#     display_name: Python 3 (ipykernel)
+#     language: python
+#     name: python3
+# ---
+
+# # Summary report notebook & associated files for the hu.MAP3 complexes for query_id_placeholder
+#
+# See my [humap3-binder repo](https://github.com/fomightez/humap3-binder) and [humap3-utilities](https://github.com/fomightez/structurework/humap3-utilities)
+
+# ------------
+#
+# #### Preparation
+
+# Get a file if not yet retrieved / check if file exists
+import os
+csv_file_raw_data = "hu.MAP3.0_complexes_wConfidenceScores_total15326_wGenenames_20240922InOrderMatched.csv"
+if not os.path.isfile(csv_file_raw_data):
+    # !curl -OL https://raw.githubusercontent.com/fomightez/humap3-binder/refs/heads/main/standardizing_initial_data/{csv_file_raw_data}
+file_needed = "complexes_rawCSV_to_df.py"
+if not os.path.isfile(file_needed):
+    # !curl -OL https://raw.githubusercontent.com/fomightez/structurework/refs/heads/master/humap3-utilities/{file_needed}
+
+# get the raw data into memory
+# !uv run complexes_rawCSV_to_df.py hu.MAP3.0_complexes_wConfidenceScores_total15326_wGenenames_20240922InOrderMatched.csv
+import pandas as pd
+rd_df = pd.read_pickle('raw_complexes_pickled_df.pkl')
+
+# ## Analyze complexes for query_id_placeholder
+#
+
+# #### Show all proteins in related complexes with details added from Uniprot
+#
+#
+
+search_term = "query_id_placeholder"
+
+# run the query collecting all proteins it occurs with
+pattern = fr'word_boundary_character_placeholder{search_term}word_boundary_character_placeholder' # Create a regex pattern with word boundaries
+rows_with_term = rd_df[rd_df['Uniprot_ACCs'].str.contains(pattern, case=False, regex=True) | rd_df['genenames'].str.contains(pattern, case=False, regex=True)]
+list_all_associated_acc_name_tuples = []
+for row in rows_with_term.itertuples():
+    #print(row)
+    list_all_associated_acc_name_tuples.extend((item1, item2) for item1, item2 in zip(row.Uniprot_ACCs.split(), row.genenames.split()))
+partners_df = pd.DataFrame(set(list_all_associated_acc_name_tuples), columns=['Uniprot_ACCs', 'genenames'])
+import rich
+rich.print(f"newline_character_placeholder[bold black]THE {len(partners_df)} PROTEINS OCCURING IN COMPLEXES WITH '{search_term}':[/bold black]newline_character_placeholder")
+with pd.option_context('display.max_rows', None, 'display.max_columns', None):
+    display(partners_df.style.hide())
+
+# For now, the information is inclusive, meaning the search term protein is listed among them. I could easily change that.
+
+# The convenience of Pandas makes that easy to store for later use as a tab-separated file that will work with Excel.  
+# Make sure to download it to your local machine.
+
+import datetime
+now = datetime.datetime.now()
+partners_df.to_csv(f'{search_term}_partners_in_complexeshumap3{now.strftime("_%Y_%m_%d")}.tsv', sep='\t',index = False) 
+
+# Show the file made:
+
+# ls query_id_placeholder_partners_in_complexes*
+
+# Make sure to download that if it is useful because this session is temporary.
+# That file should open in Excel just fine. (I could actually produce Excel files using openpyxl but leave that for later expansion.)
+
+# #### Show all complexes that query_id_placeholder is in with extra information
+#
+#
+
+# Next few cells will run the query collecting all complexes it occurs with and adding details
+pattern = fr'word_boundary_character_placeholder{search_term}word_boundary_character_placeholder' # Create a regex pattern with word boundaries
+rows_with_term_df = rd_df[rd_df['Uniprot_ACCs'].str.contains(pattern, case=False, regex=True) | rd_df['genenames'].str.contains(pattern, case=False, regex=True)].copy()
+# make the dataframe have each row be a single protein
+# to prepare to use pandas `explode()` to do that, first make the content in be lists
+rows_with_term_df['Uniprot_ACCs'] = rows_with_term_df['Uniprot_ACCs'].str.split()
+rows_with_term_df['genenames'] = rows_with_term_df['genenames'].str.split()
+# Now use explode to create a new row for each element in both columns
+df_expanded = rows_with_term_df.explode(['Uniprot_ACCs', 'genenames']).copy()
+# Reset the index 
+df_expanded = df_expanded.reset_index(drop=True)
+# Display the first few rows of the expanded dataframe
+print(df_expanded.tail())
+# Next add extra information from UniProt for each protein
+
+# This cell makes lookup table with the extra information; it takes a while to run & so is in a cell on its own to save time during development
+lookup_dict = {}
+accs = set(df_expanded['Uniprot_ACCs'].to_list())
+from unipressed import UniprotkbClient
+import time
+for acc in accs:
+    uniprot_record = UniprotkbClient.fetch_one(acc)
+    protein_name = uniprot_record['proteinDescription']['recommendedName']['fullName']['value']
+    disease_info_list = []
+    if 'comments' in uniprot_record:
+        for comment in uniprot_record['comments']:
+            if comment['commentType'] == 'DISEASE':
+                disease_info = comment.get('disease', {})
+                disease_id = disease_info.get('diseaseId', 'Unknown disease ID')
+                disease_info_list.append(disease_id)
+    if not disease_info_list:
+        disease_info_list = ['None reported']
+    disease_info = '; '.join(disease_info_list[:2])
+    lookup_dict[acc] = {'protein_name':protein_name, 'disease': disease_info}
+    time.sleep(1.1) # don't slam the API
+
+# USe collected information to enhance the dataframe
+pn_dict = {k: v['protein_name'] for k, v in lookup_dict.items()}
+disease_dict = {k: v['disease'] for k, v in lookup_dict.items()}
+df_expanded['protein_name'] = df_expanded['Uniprot_ACCs'].map(pn_dict)
+df_expanded['disease'] = df_expanded['Uniprot_ACCs'].map(disease_dict)
+conf_val2text_dict = {
+    1: 'Extremely High',
+    2: 'Very High',
+    3: 'High',
+    4: 'Moderate High',
+    5: 'Medium High',
+    6: 'Medium'
+}
+# Use vectorized mapping to convert confidence values to text
+df_expanded['ComplexConfidence'] = df_expanded['ComplexConfidence'].map(conf_val2text_dict)
+base_uniprot_url = 'https://www.uniprot.org/uniprotkb/'
+format_str = '{}{}/'
+df_expanded = df_expanded.assign(Link=base_uniprot_url + df_expanded['Uniprot_ACCs'])
+df_expanded
+
+# **Note diseases are limited to the first two listed at UniProt.**  
+# The data will be displayed below arranged better so don't worry about studying this output yet. 
+
+# Saving that as tab-separated data.
+
+import datetime
+now = datetime.datetime.now()
+df_expanded.to_csv(f'{search_term}_humap3_complexes{now.strftime("_%Y_%m_%d")}.tsv', sep='\t',index = False) 
+
+# ls query_id_placeholder_humap3_complexes*
+
+# You may wish to save that as this session is temporary.
+#
+# #### Detailing all the complexes nicely
+#
+
+grouped = df_expanded.groupby(['HuMAP3_ID','ComplexConfidence'])
+import datetime
+now = datetime.datetime.now()
+for complex, grouped_df in grouped:
+    import rich
+    rich.print(f"Complex: [bold black]{complex[0]}[/bold black]\tConfidence: [bold black]{complex[1]}[/bold black]\tProteins: [bold black]{len(grouped_df)}[/bold black]")
+    with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.max_colwidth', None):
+        display(grouped_df [grouped_df .columns[3:]].reset_index(drop=True))
+        grouped_df.to_csv(f'{complex[0]}_{search_term}_complex_CONF_{"_".join(complex[1].split())}_{len(grouped_df)}_proteins{now.strftime("_%Y_%m_%d")}.tsv', sep='\t',index = False) 
+
+# **Keep in mind the disease entries are limited to the first two listed at UniProt.** 
+#
+# These have been saved as tab-separated data. You may wish to download them, although the same information is already present in the prior saved tab-sepaarated data.
+
+# ls *query_id_placeholder_complex_CONF_*
+
+# ## 'Adjacent-complex' proteins for query_id_placeholder?
+#
+# What if wego out another layer and collect all the complexes those 'complexed proteins' are in and highlight any new proteins represented? This would build a list of those proteins that share a complex protein but aren't in the query's protein complex. 
+
+skip_proteins = [search_term] # you can put any other genenames or accession after
+# that in quotes to also skip those for example: `skip_proteins = [search_term, 'ATP6V0A4']`
+# They idea being to leave out any you expect to make it easier to clue in on any new.
+
+ptuples = [(row['Uniprot_ACCs'], row['genenames']) for index, row in df_expanded.iterrows()]
+unique_ptuples = list(set(ptuples))
+# skip any in the `skip_proteins` list
+unique_ptuples = [ptuple for ptuple in ptuples if all(element not in skip_proteins for element in ptuple)]
+
+# run the query on each collecting all proteins it occurs with and removing any already in skip_proteins or those in the complexes directly with the query protein
+rd_df = pd.read_pickle('raw_complexes_pickled_df.pkl') # make sure in memory
+adjacent_proteins_dfs = []
+for current_acc, pn in unique_ptuples:
+    pattern = fr'word_boundary_character_placeholder{current_acc}word_boundary_character_placeholder' # Create a regex pattern with word boundaries
+    rows_with_term_df = rd_df[rd_df['Uniprot_ACCs'].str.contains(pattern, case=False, regex=True)].copy()
+    # explode these to be entries per row
+    # to prepare to use pandas `explode()` to do that, first make the content in be lists
+    rows_with_term_df['Uniprot_ACCs'] = rows_with_term_df['Uniprot_ACCs'].str.split()
+    rows_with_term_df['genenames'] = rows_with_term_df['genenames'].str.split()
+    # Now use explode to create a new row for each element in both columns
+    df_expanded2 = rows_with_term_df.explode(['Uniprot_ACCs', 'genenames']).copy()
+    # Reset the index 
+    df_expanded2 = df_expanded2.reset_index(drop=True)
+    #remove those that are in `skip_proteins` list or already in the ptuples
+    accs_in_ptuples = [i[0] for i in unique_ptuples]
+    new_partners_df = df_expanded2[~df_expanded2['Uniprot_ACCs'].isin(accs_in_ptuples)]
+    new_partners_df = new_partners_df[~new_partners_df['Uniprot_ACCs'].isin(skip_proteins)]
+    new_partners_df = new_partners_df[~new_partners_df['genenames'].isin(skip_proteins)]
+    adjacent_proteins_dfs.append(new_partners_df)
+if adjacent_proteins_dfs:
+    final_new_partners_df = pd.concat(adjacent_proteins_dfs, ignore_index=True)
+else:
+    rich.print("Nothing 'adjacent' identified.")
+
+try:
+    list_all_associated_adj_name_tuples = []
+    for row in final_new_partners_df.itertuples():
+        #print(row)
+        list_all_associated_adj_name_tuples.extend((item1, item2) for item1, item2 in zip(row.Uniprot_ACCs.split(), row.genenames.split()))
+    adj_df = pd.DataFrame(set(list_all_associated_adj_name_tuples), columns=['Uniprot_ACCs', 'genenames'])
+    import rich
+    rich.print(f"newline_character_placeholder[bold black]THE {len(adj_df)} PROTEINS THAT AREN'T IN '{search_term}' COMPLEXES THAT AREnewline_character_placeholderOBSERVED IN OTHER COMPLEXES WITH PROTEINS FOUND IN '{search_term}' COMPLEXES:[/bold black]newline_character_placeholder")
+    with pd.option_context('display.max_rows', None, 'display.max_columns', None):
+        display(adj_df.style.hide())
+except NameError:
+    import rich
+    rich.print("Likely, nothing 'adjacent' identified; see above cell.")
+
+# ------------
+#
+# Enjoy!
+'''
+# ---End of Additional, special settings----------------------------------------
+
+
+
+##----------------HELPER FUNCTIONS----------------------------------------------
+def write_string_to_file(s, fn):
+    '''
+    Takes a string, `s`, and a name for a file & writes the string to the file.
+    '''
+    with open(fn, 'w') as output_file:
+        output_file.write(s)
+
+
+
+
+
+
+
+# SNAKEMAKE RULES---------------------------------------------------------------
+
+rule all:
+    input:
+        results_archive
+
+# ---------------Individual Rules---------------------------------------------
+
+# Delete any generated files so can trigger full run easily after cleaning
+'''
+The `touch` commands added make sure files matching each and every pattern of
+output so that the `rm` commands don't throw an error.
+'''
+rule clean:
+    shell:
+        '''
+        touch complexes_reports_nbs18199xlkleFAKE.tar.gz
+        touch Summary_report_humap3_data_for_18199xlkleFAKE.ipynb
+        touch Summary_report_humap3_data_for_18199xlkleFAKE.py
+        touch hu.MAP3.0_complexes_wConfidenceScores_total15326_wGenenames_20240922InOrderMatched.csv
+        touch complexes_rawCSV_to_df.py
+        rm complexes_reports_nbs*.tar.gz
+        rm Summary_report_humap3_data_for_*.ipynb
+        rm Summary_report_humap3_data_for_*.py
+        rm hu.MAP3.0_complexes_wConfidenceScores_total15326_wGenenames_20240922InOrderMatched.csv
+        rm complexes_rawCSV_to_df.py
+        '''
+
+
+# Use the table & make a Python script that will be used later to make notebook
+'''
+By including the python scripts as input, this rule will be run 
+again if the scripts are edited. (See about `wordcount.py` under 
+'Handling dependencies differently' as 
+https://carpentries-incubator.github.io/workflows-snakemake/03-wildcards/index.html
+'''
+rule read_table_and_create_py:
+    input:
+        text_file_to_use,
+        csv_file_raw_data,
+        'complexes_rawCSV_to_df.py'
+    output: py_files
+    run:
+        for indx,row in df.iterrows():
+            info_tag= row.identifier
+            py_file_name = f"{prefix_to_use_for_report_nbs}{info_tag}.py"
+            stub_as_py = nb_stub_as_py # You cannot use an immutable string from
+            # the main namespace in a rule if you are going to change it. If it 
+            # remains unaltered, it works. The way around is to simply assign 
+            # a new variable name within the rule. HAS TO BE DIFFERENT NAME.
+            stub_as_py = stub_as_py.replace(
+                "query_id_placeholder",row.identifier)
+            stub_as_py = stub_as_py.replace(
+                "newline_character_placeholder","\\n") #need escape character or otherwise adds a newline to the stub being built and breaks syntax because line break ; will end up as `\n` in file produced on next line
+            stub_as_py = stub_as_py.replace(
+                "word_boundary_character_placeholder","\\b") #need escape character here too, see above
+            write_string_to_file(stub_as_py, py_file_name)
+
+
+# In Jupyter I made a template notebook and then converted it to Python script
+# that I thought I'd be able to paste into here because it worked in 
+# `bendIt_analysis.py` and pdbsum-binder.
+# After pasted in here and the docstring in the function (see below) fixed, I 
+# have replaced the items that will be swapped in for the individual notebook 
+# are represented with unique placeholders.
+# Converted the template notebook `making_stub_for_summary_report_humap3_data_per_protein.ipynb` to a 
+# Python script I can paste in here using AFTER DELETING A DOCSTRING for the
+# extra code I had kept around but wasn't using. 
+# so that the quotes didn't mess up the stub being a long docstring:
+#!jupytext --to py making_stub_for_summary_report_humap3_data_per_protein.ipynb
+# NOTES FOR USING JUPYTEXT IN THIS PROCESS
+# To convert a script to a notebook without running it; help at 
+# https://jupytext.readthedocs.io/en/latest/using-cli.html
+# !jupytext --to notebook making_stub_for_summary_report_humap3_data_per_protein.py --output zzz.ipynb
+# To convert a script to a notebook and run it at same time
+#!jupytext --to notebook --execute making_stub_for_summary_report_humap3_data_per_protein.py --output zzz.ipynb
+
+
+
+
+# Convert the python scripts to notebooks and run them
+'''
+I had planned to use the new feature of being able to run notebooks. See
+https://github.com/snakemake/snakemake/tree/master/tests/test_jupyter_notebook 
+and
+https://snakemake.readthedocs.io/en/stable/snakefiles/rules.html#jupyter-notebook-integration
+But I having major problems combining the use of wildcards with running the notebook,
+plus it adds a preamble I need to run. Is it just easier to run with jupytext or nbcomvert?
+This is what I tried before:
+rule run_notebooks_to_generate_report:
+    input: "{details}.py.ipynb"
+    output: "processedwpreamble_{details}.py.ipynb"
+    log:
+        # optional path to the processed notebook
+        notebook={output}
+    notebook:
+        {input}
+
+Then I was going to use nbconvert but because jupytext allows me to save a
+a script within a script (or Snakefile, in this case), I switched to that
+to make a python script and then convert it. So this is what I had before 
+switching from nbconvert:
+rule run_notebooks_to_generate_report_using_nbconvert:
+    input: "unprocessed_"+prefix_to_use_for_report_nbs+"{details}.ipynb"
+    output: prefix_to_use_for_report_nbs+"{details}.ipynb"
+    shell: '!jupyter nbconvert --to notebook --execute {input} --output {output}'
+
+I also added after the conversion step removing the input python scripts to 
+progress towards a cleaner interface where the generated notebooks are easier to
+see.
+'''
+rule convert_scripts_to_nb_and_run_using_jupytext:
+    input: prefix_to_use_for_report_nbs+"{details}.py"
+    output: prefix_to_use_for_report_nbs+"{details}.ipynb"
+    shell: 'jupytext --to notebook --execute {input} --output {output};rm {input}'
+
+
+
+
+# Remove the snakemake preamble from the notebooks
+'''
+Snamemake adds a preamble cell when used to run the notebook. This will remove 
+first cell from each notebook using nbformat.
+THIS WAS ONLY NECESSARY WHEN I WAS HOPING TO USE SNAKEMAKES INTERNAL NOTEBOOK
+HANDLING TO RUN THEM BUT THE WILDCARDS WITH NOTEBOOKS PROVED MORE COMPLEX.
+WHAT I HAD
+rule remove_preamble_cell:
+    input: "processedwpreamble_{details}.py.ipynb"
+    output: "processed_{details}.ipynb"
+    run:
+        ntbk = nbf.read({input} nbf.NO_CONVERT)
+        new_ntbk = ntbk
+        new_ntbk.cells = ntbk.cells[1:]
+        nbf.write({output}, version=nbf.NO_CONVERT)
+'''
+
+
+
+# Create archives with the executed nb_files
+'''
+In old one, I added some cleaning as well to remove the auxillary files. 
+Should I add that back in?
+'''
+rule make_archive:
+    input: nb_files
+    output: results_archive
+    shell:
+        '''
+        tar -czf {output} {input}; echo "Be sure to download {output}."
+        '''
