@@ -184,7 +184,7 @@ nb_stub_as_py='''# ---
 import os
 csv_file_raw_data = "hu.MAP3.0_complexes_wConfidenceScores_total15326_wGenenames_20240922InOrderMatched.csv"
 if not os.path.isfile(csv_file_raw_data):
-    # !curl -OL https://raw.githubusercontent.com/fomightez/humap3-binder/refs/heads/main/standardizing_initial_data/{csv_file_raw_data}
+    # !curl -OL https://raw.githubusercontent.com/fomightez/humap3-binder/refs/heads/main/additional_nbs/standardizing_initial_data/{csv_file_raw_data}
 file_needed = "complexes_rawCSV_to_df.py"
 if not os.path.isfile(file_needed):
     # !curl -OL https://raw.githubusercontent.com/fomightez/structurework/refs/heads/master/humap3-utilities/{file_needed}
@@ -208,7 +208,6 @@ pattern = fr'word_boundary_character_placeholder{search_term}word_boundary_chara
 rows_with_term = rd_df[rd_df['Uniprot_ACCs'].str.contains(pattern, case=False, regex=True) | rd_df['genenames'].str.contains(pattern, case=False, regex=True)]
 list_all_associated_acc_name_tuples = []
 for row in rows_with_term.itertuples():
-    #print(row)
     list_all_associated_acc_name_tuples.extend((item1, item2) for item1, item2 in zip(row.Uniprot_ACCs.split(), row.genenames.split()))
 partners_df = pd.DataFrame(set(list_all_associated_acc_name_tuples), columns=['Uniprot_ACCs', 'genenames'])
 import rich
