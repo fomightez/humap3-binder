@@ -64,8 +64,8 @@ import nbformat as nbf
 csv_file_raw_data = "hu.MAP3.0_complexes_wConfidenceScores_total15326_wGenenames_20240922InOrderMatched.csv"
 if not os.path.isfile(csv_file_raw_data):
     os.system("curl -OL https://raw.githubusercontent.com/"\
-        "fomightez/humap3-binder/refs/heads/main/standardizing_initial_data/"\
-        f"{csv_file_raw_data}")
+        "fomightez/humap3-binder/refs/heads/main/additional_nbs/"\
+        f"standardizing_initial_data/"{csv_file_raw_data}")
 file_needed = "complexes_rawCSV_to_df.py"
 if not os.path.isfile(file_needed):
     os.system("curl -OL https://raw.githubusercontent.com/"\
