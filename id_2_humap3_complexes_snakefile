@@ -541,8 +541,9 @@ checkpoint convert_scripts_to_nb_and_run_using_jupytext:
 This is to make an archive with everything one would want to download in a single archive.
 Plus do a little clean up.
 
-Zip is done with `-q` flag to do it quietly to avoid getting a big list in output
-as snakemake runs that says things like " adding: Summary_report_humap3_data_for_FBL.ipynb (deflated 83%)"
+Zip is done with `--quiet` flag to do it quietly to avoid getting a big list in 
+output as snakemake runs that code & posts things like 
+" adding: Summary_report_humap3_data_for_FBL.ipynb (deflated 83%)"
 
 There is a checkpoint for the previous rule so that the DAG will be re-evaluated 
 by snakemake at the conclusion of that so the names of the associated files like
