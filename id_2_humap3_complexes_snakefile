@@ -54,6 +54,7 @@ import glob
 import rich
 import pandas as pd
 import nbformat as nbf
+import re
 
 already_gave_notifications_indicator_file = "agn_1z9199xIGNORE_THIS_SENTINEL_FILE.txt"
 
@@ -112,8 +113,9 @@ to_drop = []
 for idx, row in df.iterrows():
     current_id = row['identifier']
     # Check if ID exists in either column, using string content to allow for both space and semicolon separators
-    found = (rd_df['Uniprot_ACCs'].str.contains(current_id, regex=False).any() or 
-            rd_df['genenames'].str.contains(current_id, regex=False).any())
+    pattern = fr'\b{current_id}\b'  # Create a regex pattern with word boundaries
+    found = (rd_df['Uniprot_ACCs'].str.contains(pattern, case=False, regex=True).any() or 
+            rd_df['genenames'].str.contains(pattern, case=False, regex=True).any())
     if not found:
         if not os.path.isfile(already_gave_notifications_indicator_file): #only notify if haven't already, otherwise gets confusing because this Python outside the rules seems to run again in MyBinder situatuons after first DAG evaluation
             rich.print(f"Warning: Identifier '{current_id}' not found in the reference columns 'Uniprot_ACCs' or 'genenames'.\nThat identifier '{current_id}' will be removed from consideration here.")
