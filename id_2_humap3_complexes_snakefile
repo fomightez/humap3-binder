@@ -36,8 +36,8 @@
 # For cleaning, there won't be any conflicts, so use the following on MyBinder:
 # !snakemake  -s id_2_humap3_complexes_snakefile clean --cores 8
 # More general info:
-# If you had a ton of comparisons to process and wanted to take advantage of 
-# parallel processing in the snakemake run you can read this section:
+# If you had a ton of reports to process elsewhere and wanted to take advantage 
+# of parallel processing in the snakemake run you can read this section:
 # Initiate with `snakemake -s id_2_humap3_complexes_snakefile -j X`, replacing 
 # the `X` with the number of cores available. Otherwise, initiate with 
 # To just initiate a rule/step, run something like:
@@ -178,7 +178,9 @@ nb_stub_as_py='''# ---
 
 # # Summary report notebook & associated files for the hu.MAP3 complexes for query_id_placeholder
 #
-# See my [humap3-binder repo](https://github.com/fomightez/humap3-binder) and [humap3-utilities](https://github.com/fomightez/structurework/humap3-utilities)
+# See [here](https://nbviewer.org/github/fomightez/humap3-binder/blob/main/Making_many_hu.MAP3_reports_easily_using_Snakemake.ipynb) for more insight into how this summary report was generated in sessions launched starting [here in the 'humap3-binder' repo](https://github.com/fomightez/humap3-binder).
+
+# ------------
 
 # ------------
 #
@@ -327,9 +329,57 @@ for complex, grouped_df in grouped:
 
 # ls *query_id_placeholder_complex_CONF_*
 
+# Running the next cell will make an HTML file that will make it more convenient to review the details of the indiviudal complexes separate from Jupyter:
+
+def getTableHTML(df):
+    """
+    From https://stackoverflow.com/a/49687866/2007153
+    
+    Get a Jupyter like html of pandas dataframe with header underline (except index)
+    """
+    styles = [
+        #table properties
+        dict(selector=" ", 
+             props=[("margin","0"),
+                    ("font-family",'"Helvetica", "Arial", sans-serif'),
+                    ("border-collapse", "collapse"),
+                    ("border","none")]),
+        #background shading
+        dict(selector="tbody tr:nth-child(even)",
+             props=[("background-color", "#f4f4f4")]), # TO SHOW IT IS BEING USED AND NOT NORMAL PANDAS COLORING, change this from `#eee` to `#fee` # to add reddish tinge
+        dict(selector="tbody tr:nth-child(odd)",
+             props=[("background-color", "#fff")]),  
+        #cell spacing
+        dict(selector="td", 
+             props=[("padding", ".5em")]),
+        #header cell properties (excluding index)
+        dict(selector="thead th:not(:first-child)", 
+             props=[("font-size", "80%"),
+                    ("text-align", "center"),
+                    ("border-bottom", "2px solid #666"),
+                    ("padding", ".5em")]),
+        #index header cell properties (no border)
+        dict(selector="thead th:first-child", 
+             props=[("font-size", "80%"),
+                    ("text-align", "center"),
+                    ("padding", ".5em")]),
+    ]
+    return (df.style.set_table_styles(styles)).to_html()
+collected_html = ""
+for complex, grouped_df in grouped:
+    collected_html += (f"Complex: <strong>{complex[0]}</strong>&emsp;Confidence: <strong>{complex[1]}</strong>&emsp;Proteins: <strong>{len(grouped_df)}</strong></br>")
+    with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.max_colwidth', None):
+        #display(grouped_df [grouped_df .columns[3:]].reset_index(drop=True))
+        collected_html += getTableHTML(grouped_df)
+        collected_html += "</br></br></br>"
+collected_html_fn = f'{search_term}_individual_complexes_details{now.strftime("_%Y_%m_%d")}.html'
+# %store collected_html >{collected_html_fn}
+
+# Download that file so you can then share that HTML file and tell the recipient to open it with a browser. Or if you prefer a PDF, after downloading it to your own machine, open it in your browser and print to PDF. (**TIP**: when using `'File'` > `'Print'` for printing to a PDF on a Mac, toggle on '`Background graphics`' to get the nice shading you see in the HTML file; to find '`Background graphics`', in the Print Dialog box, click the drop-down for '`More Settings`' to reveal at the bottom '`Options`'  with '`Background graphics`' to the right of it.)
+
 # ## 'Adjacent-complex' proteins for query_id_placeholder?
 #
-# What if wego out another layer and collect all the complexes those 'complexed proteins' are in and highlight any new proteins represented? This would build a list of those proteins that share a complex protein but aren't in the query's protein complex. 
+# What if we go out another layer and collect all the complexes those 'complexed proteins' are in and highlight any new proteins represented? This would build a list of those proteins that share a complex protein but aren't in the query's protein complex. 
 
 skip_proteins = [search_term] # you can put any other genenames or accession after
 # that in quotes to also skip those for example: `skip_proteins = [search_term, 'ATP6V0A4']`
@@ -417,7 +467,9 @@ def names_of_assoc_files(wildcards):
     associated_files2 = glob.glob(f"*{name_part_to_match}*.tsv")
     name_part_to_match = "_partners_in_complexeshumap3_"
     associated_files3 = glob.glob(f"*{name_part_to_match}*.tsv")
-    assoc_filenames = associated_files1 + associated_files2 + associated_files3
+    name_part_to_match = "_individual_complexes_details_"
+    associated_files4 = glob.glob(f"*{name_part_to_match}*.html")
+    assoc_filenames = associated_files1 + associated_files2 + associated_files3 + associated_files4
     # use `identifiers_in_df` to limit these to the ones related to currently 
     # running identifiers so it doesn't get all in case the user ran things
     # earlier and didn't bother cleaning. This way won't have unrelated things 
@@ -451,6 +503,7 @@ rule clean:
         touch huMAP3_18199xlkleFAKE.tsv
         touch 18199xlkleFAKE_humap3_complexes_18199xlkleFAKE.tsv
         touch 18199xlkleFAKE_partners_in_complexeshumap3_18199xlkleFAKE.tsv
+        touch 18199xlkleFAKE_individual_complexes_details_18199xlkleFAKE.html
         touch {csv_file_raw_data}
         touch {CSV2df_script_needed}
         rm {already_gave_notifications_indicator_file}
@@ -460,6 +513,7 @@ rule clean:
         rm huMAP3_*.tsv
         rm *_humap3_complexes_*.tsv
         rm *_partners_in_complexeshumap3_*.tsv
+        rm *_individual_complexes_details_*.html
         rm {csv_file_raw_data}
         rm {CSV2df_script_needed}
         '''
