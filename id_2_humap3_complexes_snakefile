@@ -502,7 +502,7 @@ rule clean:
         touch complexes_report_nbs_and_files18199xlkleFAKE.zip
         touch Summary_report_humap3_data_for_18199xlkleFAKE.ipynb
         touch Summary_report_humap3_data_for_18199xlkleFAKE.py
-        touch huMAP3_18199xlkleFAKE.tsv
+        touch huMAP3_18199xlkleFAKE_complex_CONF_Extremely_High_799xlkleFAKE.tsv
         touch 18199xlkleFAKE_humap3_complexes_18199xlkleFAKE.tsv
         touch 18199xlkleFAKE_partners_in_complexeshumap3_18199xlkleFAKE.tsv
         touch 18199xlkleFAKE_individual_complexes_details_18199xlkleFAKE.html
@@ -512,7 +512,7 @@ rule clean:
         rm complexes_report_nbs_and_files*.zip
         rm Summary_report_humap3_data_for_*.ipynb
         rm Summary_report_humap3_data_for_*.py
-        rm huMAP3_*.tsv
+        rm *_complex_CONF_*.tsv
         rm *_humap3_complexes_*.tsv
         rm *_partners_in_complexeshumap3_*.tsv
         rm *_individual_complexes_details_*.html
