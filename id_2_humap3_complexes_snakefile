@@ -463,11 +463,11 @@ def names_of_assoc_files(wildcards):
     #output_nb = checkpoints.convert_scripts_to_nb_and_run_using_jupytext.get().output
     #filenames, _ = glob_wildcards("huMAP3_*_{filename}_.tsv")
     assoc_filenames = []
-    name_part_to_match = "huMAP3_"
-    associated_files1 = glob.glob(f"{name_part_to_match}*.tsv")
-    name_part_to_match = "_humap3_complexes_"
-    associated_files2 = glob.glob(f"*{name_part_to_match}*.tsv")
     name_part_to_match = "_partners_in_complexeshumap3_"
+    associated_files1 = glob.glob(f"*{name_part_to_match}*.tsv")
+    name_part_to_match = "_complex_CONF_"
+    associated_files2 = glob.glob(f"*{name_part_to_match}*.tsv")
+    name_part_to_match = "_humap3_complexes_"
     associated_files3 = glob.glob(f"*{name_part_to_match}*.tsv")
     name_part_to_match = "_individual_complexes_details_"
     associated_files4 = glob.glob(f"*{name_part_to_match}*.html")
