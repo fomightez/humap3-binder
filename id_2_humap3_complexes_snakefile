@@ -74,7 +74,11 @@ if not os.path.isfile(CSV2df_script_needed):
     os.system("curl -OL https://raw.githubusercontent.com/"\
         "fomightez/structurework/refs/heads/master/"\
         f"humap3-utilities/{CSV2df_script_needed}")
-
+lud_script_needed = "make_lookup_table_for_extra_info4complexes.py"
+if not os.path.isfile(lud_script_needed):
+    os.system("curl -OL https://raw.githubusercontent.com/"\
+        "fomightez/structurework/refs/heads/master/"\
+        f"humap3-utilities/{lud_script_needed}")
 
 
 # INPUT IDENTIFIERS LIST FROM USER-PROVIDED FILE--------------------------------
@@ -196,6 +200,10 @@ if not os.path.isfile(csv_file_raw_data):
 file_needed = "complexes_rawCSV_to_df.py"
 if not os.path.isfile(file_needed):
     # !curl -OL https://raw.githubusercontent.com/fomightez/structurework/refs/heads/master/humap3-utilities/{file_needed}
+file_needed = "make_lookup_table_for_extra_info4complexes.py"
+if not os.path.isfile(file_needed):
+    # !curl -OL https://raw.githubusercontent.com/fomightez/structurework/refs/heads/master/humap3-utilities/{file_needed}
+
 
 # get the raw data into memory
 # !uv run complexes_rawCSV_to_df.py hu.MAP3.0_complexes_wConfidenceScores_total15326_wGenenames_20240922InOrderMatched.csv
@@ -259,29 +267,13 @@ print(df_expanded.tail())
 # Next add extra information from UniProt for each protein
 
 # This cell makes lookup table with the extra information; it takes a while to run & so is in a cell on its own to save time during development
-lookup_dict = {}
-accs = set(df_expanded['Uniprot_ACCs'].to_list())
-from unipressed import UniprotkbClient
-import time
-for acc in accs:
-    uniprot_record = UniprotkbClient.fetch_one(acc)
-    protein_name = uniprot_record['proteinDescription']['recommendedName']['fullName']['value']
-    disease_info_list = []
-    if 'comments' in uniprot_record:
-        for comment in uniprot_record['comments']:
-            if comment['commentType'] == 'DISEASE':
-                disease_info = comment.get('disease', {})
-                disease_id = disease_info.get('diseaseId', 'Unknown disease ID')
-                disease_info_list.append(disease_id)
-    if not disease_info_list:
-        disease_info_list = ['None reported']
-    disease_info = '; '.join(disease_info_list[:2])
-    lookup_dict[acc] = {'protein_name':protein_name, 'disease': disease_info}
-    time.sleep(1.1) # don't slam the API
+# %run -i make_lookup_table_for_extra_info4complexes.py
 
-# USe collected information to enhance the dataframe
+# Use collected information to enhance the dataframe
 pn_dict = {k: v['protein_name'] for k, v in lookup_dict.items()}
 disease_dict = {k: v['disease'] for k, v in lookup_dict.items()}
+synonyms_dict = {k: v['synonyms'] for k, v in lookup_dict.items()}
+df_expanded['synonyms'] = df_expanded['Uniprot_ACCs'].map(synonyms_dict)
 df_expanded['protein_name'] = df_expanded['Uniprot_ACCs'].map(pn_dict)
 df_expanded['disease'] = df_expanded['Uniprot_ACCs'].map(disease_dict)
 conf_val2text_dict = {
@@ -508,6 +500,7 @@ rule clean:
         touch 18199xlkleFAKE_individual_complexes_details_18199xlkleFAKE.html
         touch {csv_file_raw_data}
         touch {CSV2df_script_needed}
+        touch {lud_script_needed}
         rm {already_gave_notifications_indicator_file}
         rm complexes_report_nbs_and_files*.zip
         rm Summary_report_humap3_data_for_*.ipynb
@@ -518,6 +511,7 @@ rule clean:
         rm *_individual_complexes_details_*.html
         rm {csv_file_raw_data}
         rm {CSV2df_script_needed}
+        rm {lud_script_needed}
         '''
 
 
