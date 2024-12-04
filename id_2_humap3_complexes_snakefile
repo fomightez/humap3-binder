@@ -60,7 +60,7 @@ already_gave_notifications_indicator_file = "agn_1z9199xIGNORE_THIS_SENTINEL_FIL
 
 # GET THE DATA & SCRIPT THAT WILL ASSIST ---------------------------------------
 # This way they can be used as input to a rule and if they are changed the
-# approrpriate parts of the workflow will be rerun.
+# appropriate parts of the workflow will be rerun.
 # The data & script to read it will be needed for the 
 # 'INPUT IDENTIFIERS LIST FROM USER-PROVIDED FILE' step and so this has to be
 # done before that step.
