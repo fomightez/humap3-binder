@@ -1,0 +1,431 @@
+# Snakemake pipeline for generating summary reports about data in hu.MAP 2.0 
+# verse hu.MAP 3.0 data for a protein.
+# See https://github.com/fomightez/humap3-binder
+# Needs standard packages for Jupytext and Pandas.
+# The user has to provide a list in a file 
+#`Make_me_humap2verse3_summary_for_these.txt` 
+# where each element on a separate line is an identifier.
+# 
+# Ezample
+# To help clarify that, the following code between the dashed lines
+# can have the starting `#`s removed at the start of each line and that code can 
+# be run in a Jupyter notebook to make such a file with the list of identifiers,
+# each on a separate line:
+#-------------------------
+#%writefile Make_me_humap2verse3_summary_for_these.txt
+#FBL
+#Q9NX24
+#XRN1
+#-------------------------
+# 
+# 
+# See the accompanying notebook entitled 
+# `Using_snakemake_to_highlight_differences_between_hu.MAP2_and_hu.MAP3_data_for_multiple_identifiers.ipynb`
+# for a demo.
+# This file can be run after making the text table 
+# `Make_me_humap2verse3_summary_for_these.txt` by calling
+# `!snakemake -s id_2_humap2verse3_complexes_snakefile` from inside a jupyter notebook 
+# or run via 
+# `!snakemake -s id_2_humap2verse3_complexes_snakefile` on the command line.
+# Via MyBinder, run this Snakefile with the following:
+# !snakemake -s id_2_humap2verse3_complexes_snakefile --cores 1
+# Only 1 core, because I think when I was using 8 it would commonly cause a race
+# where more than one notebook was getting auxillary scripts and overwriting as
+# as the other notebooks was trying to use. More reliable with 1. But if it, did 
+# fail when using more cores, try re-running again because it should just 
+# complete the missing files.
+# For cleaning, there won't be any conflicts, so use the following on MyBinder:
+# !snakemake  -s id_2_humap2verse3_complexes_snakefile clean --cores 8
+# More general info:
+# If you had a ton of reports to process elsewhere and wanted to take advantage 
+# of parallel processing in the snakemake run you can read this section:
+# Initiate with `snakemake -s id_2_humap2verse3_complexes_snakefile -j X`, replacing 
+# the `X` with the number of cores available. Otherwise, initiate with 
+# To just initiate a rule/step, run something like:
+# `snakemake -s id_2_humap2verse3_complexes_snakefile -j 8 <name_of_rule>`, where the 
+# number 8 is replaced by the  result of the command `getconf _NPROCESSORS_ONLN`.
+#
+#Note for Wayne, this is largely based on the Snakefile 
+# `id_2_humap3_complexes_snakefile` in my humap3-binder repo.
+
+import os
+import sys
+import datetime
+now = datetime.datetime.now()
+import glob
+import rich
+import pandas as pd
+import nbformat as nbf
+import re
+
+already_gave_notifications_indicator_file = "agn_1z2159xIGNORE_THIS_SENTINEL_FILE.txt"
+
+# GET THE DATA & SCRIPT THAT WILL ASSIST ---------------------------------------
+# This way they can be used as input to a rule and if they are changed the
+# appropriate parts of the workflow will be rerun.
+# The data & script to read it will be needed for the 
+# 'INPUT IDENTIFIERS LIST FROM USER-PROVIDED FILE' step and so this has to be
+# done before that step.
+csv_file_raw_data2 = "humap2_complexes_20200809InOrderMatched.csv"
+if not os.path.isfile(csv_file_raw_data2):
+    os.system("curl -OL -s https://raw.githubusercontent.com/"\
+        "fomightez/humap2-binder/refs/heads/main/additional_nbs/"\
+        f"standardizing_initial_data/{csv_file_raw_data2}")
+csv_file_raw_data = "hu.MAP3.0_complexes_wConfidenceScores_total15326_wGenenames_20240922InOrderMatched.csv"
+if not os.path.isfile(csv_file_raw_data):
+    os.system("curl -OL -s https://raw.githubusercontent.com/"\
+        "fomightez/humap3-binder/refs/heads/main/additional_nbs/"\
+        f"standardizing_initial_data/{csv_file_raw_data}")
+CSV2df_script_needed = "complexes_rawCSV_to_df.py"
+if not os.path.isfile(CSV2df_script_needed):
+    os.system("curl -OL -s https://raw.githubusercontent.com/"\
+        "fomightez/structurework/refs/heads/master/"\
+        f"humap3-utilities/{CSV2df_script_needed}")
+lud_script_needed = "make_lookup_table_for_extra_info4complexes.py"
+if not os.path.isfile(lud_script_needed):
+    os.system("curl -OL -s https://raw.githubusercontent.com/"\
+        "fomightez/structurework/refs/heads/master/"\
+        f"humap3-utilities/{lud_script_needed}")
+tct_script_needed = "two_comp_three_details_plus_table.ipy"
+if not os.path.isfile(lud_script_needed):
+    os.system("curl -OL -s https://raw.githubusercontent.com/"\
+        "fomightez/structurework/refs/heads/master/"\
+        f"humap3-utilities/{tct_script_needed}")
+lmiss_script_needed = "look_for_proteins_going_missing.py"
+if not os.path.isfile(lud_script_needed):
+    os.system("curl -OL -s https://raw.githubusercontent.com/"\
+        "fomightez/structurework/refs/heads/master/"\
+        f"humap3-utilities/{lmiss_script_needed}")
+lmmiss_script_needed = "look_for_majority_complex_member_going_missing.py"
+if not os.path.isfile(lud_script_needed):
+    os.system("curl -OL -s https://raw.githubusercontent.com/"\
+        "fomightez/structurework/refs/heads/master/"\
+        f"humap3-utilities/{lmmiss_script_needed}")
+
+
+# INPUT IDENTIFIERS LIST FROM USER-PROVIDED FILE--------------------------------
+# Users provide the information as file with IDs listed each on a line. See 
+# above for the format of that.
+# I'm bringing it in here so that I can generate the names of the notebooks that
+# need to be made. So that I can use these in snakemake as input and later even
+# as output.
+# For now the file with the table must be named 
+# `Make_me_humap2verse3_summary_for_these.txt`.
+
+text_file_to_use  = "Make_me_humap2verse3_summary_for_these.txt" # name of 
+# the text file with identifier on each row to make a Jupyter notebook with 
+# the reports as content
+column_names=(["identifier"])
+df = pd.read_table(text_file_to_use, 
+    names=column_names, index_col=None,  sep='\s+')
+# Because the user may use an ID that isn't in the data and that will cause an 
+# error if try to look for that in UniProt and cause the report notebook meant 
+# to run to error out and then the snakemake file to stop running. So to avoid 
+# all that, checking now if the IDs are in the data file of the complexes and 
+# removing it from the dataframe if not there, with notice to the user. This way
+# the user can abort the pipeline at this point or let it run and at least get 
+# data for any other identifiers that have complex data represented.
+# To do this validation: 
+# Iterate on the `ids` and check if present in the 'in-order matched' CSV data, 
+# which will need to be read in. Next couple of lines will handle reading it in. 
+# When iterating alert user to any identifiers removed.
+os.system(f"uv run complexes_rawCSV_to_df.py {csv_file_raw_data2}")
+rd_df2 = pd.read_pickle('raw_complexes_pickled_df.pkl')
+print("\n")
+os.system(f"uv run complexes_rawCSV_to_df.py {csv_file_raw_data}")
+print("\n") # add exta line break to set up for next `print()`; otherwise prints
+# far over on right
+rd_df3 = pd.read_pickle('raw_complexes_pickled_df.pkl')
+to_drop = []
+for idx, row in df.iterrows():
+    current_id = row['identifier']
+    # Check if ID exists in either column, using string content to allow for both space and semicolon separators
+    pattern = fr'\b{current_id}\b'  # Create a regex pattern with word boundaries
+    found2 = (rd_df2['Uniprot_ACCs'].str.contains(pattern, case=False, regex=True).any() or 
+            rd_df2['genenames'].str.contains(pattern, case=False, regex=True).any())
+    found3 = (rd_df3['Uniprot_ACCs'].str.contains(pattern, case=False, regex=True).any() or 
+            rd_df3['genenames'].str.contains(pattern, case=False, regex=True).any())
+    if (not found2) or (not found3):
+        if not os.path.isfile(already_gave_notifications_indicator_file): #only notify if haven't already, otherwise gets confusing because this Python outside the rules seems to run again in MyBinder situatuons after first DAG evaluation
+            rich.print(f"Warning: Identifier '{current_id}' not found in the reference columns 'Uniprot_ACCs' or 'genenames' for both version 2.0 and version 3.0.\nCannot compare if cannot find identifier and it isn't in both sets of data.\nThat identifier '{current_id}' will be removed from consideration here.")
+        to_drop.append(idx)
+if to_drop:
+    df = df.drop(to_drop).reset_index(drop=True)
+    if not os.path.isfile(already_gave_notifications_indicator_file): #only notify if haven't already, otherwise gets confusing because this Python outside the rules seems to run again in MyBinder situatuons after first DAG evaluation
+        rich.print(f"Removed {len(to_drop)} identifiers total")
+if not os.path.isfile(already_gave_notifications_indicator_file): #only notify if haven't already, otherwise gets confusing because this Python outside the rules seems to run again in MyBinder situatuons after first DAG evaluation
+    rich.print(f"Initial preparation steps complete...progressing on to Snakemake rules...")
+# Use that now-validated dataframe to define `nb_files` and 
+# the `processed_nb_files`
+prefix_to_use_for_report_nbs = "Summary_report_humap2verse3_data_for_"
+nb_files = []
+py_files = []
+#nb_files_without_py = []
+for indx,row in df.iterrows():
+    main = (f'{"_".join(row.tolist())}')
+    nb_name = f"{prefix_to_use_for_report_nbs}{row.identifier}.ipynb"
+    py_name = f"{prefix_to_use_for_report_nbs}{row.identifier}.py"
+    nb_files.append(nb_name)
+    py_files.append(py_name)
+unprocessed_nb_files = [f"unprocessed_{x}" for x in nb_files]
+identifiers_in_df = set(df.identifier.tolist())
+
+
+
+
+# FILES THAT WILL BE GENERATED--------------------------------------------------
+# py_files #Python versions that are easier to paste here that will be converted
+# to the notebooks by jupytext
+#nb_files # the run notebooks generated by running jupytext with the `py_files`
+results_archive = f"Hu.MAP2verse3_report_nbs{now.strftime('%b%d%Y%H%M')}.zip"#
+#archive of processed notebooks for downloading
+
+
+
+
+
+# Additional, special settings--------------------------------------------------
+# note:  the cell number  and cell content are standardized.  For here, it makes 
+# sense and is way more direct to use a SINGLE standardized template text file 
+# (actually python script code underlying) and use Jupytext to convert it into a 
+# notebook. I had to FURTHER EDIT THE STUB TO MAKE IT PASTEABLE HERE THOUGH, by
+# removing the code I left in that I had effectively commented out by putting it 
+# in a docstring. 
+# RELATED: see stuff about 'DOCSTRING' in the Snakefile in pdbsum-binder
+
+nb_stub_as_py='''# ---
+# jupyter:
+#   jupytext:
+#     text_representation:
+#       extension: .py
+#       format_name: light
+#       format_version: '1.5'
+#       jupytext_version: 1.16.4
+#   kernelspec:
+#     display_name: Python 3 (ipykernel)
+#     language: python
+#     name: python3
+# ---
+
+# # Summary report notebook highlighting differences between hu.MAP 2.0 and hu.MAP 3.0 data for query_id_placeholder
+#
+# See [here](https://nbviewer.org/github/fomightez/humap3-binder/blob/main/Using_snakemake_to_highlight_differences_between_hu.MAP2_and_hu.MAP3_data_for_multiple_identifiers.ipynb) for more insight into how this summary report was generated in sessions launched starting [here in the 'humap3-binder' repo](https://github.com/fomightez/humap3-binder).
+
+# ------------
+#
+# #### Preparation steps
+#
+
+# Get a file if not yet retrieved / check if file exists
+import os
+csv_file_raw_data = "humap2_complexes_20200809InOrderMatched.csv"
+if not os.path.isfile(csv_file_raw_data):
+    # !curl -OL -s https://raw.githubusercontent.com/fomightez/humap2-binder/refs/heads/main/additional_nbs/standardizing_initial_data/{csv_file_raw_data}
+csv_file_raw_data = "hu.MAP3.0_complexes_wConfidenceScores_total15326_wGenenames_20240922InOrderMatched.csv"
+if not os.path.isfile(csv_file_raw_data):
+    # !curl -OL -s https://raw.githubusercontent.com/fomightez/humap3-binder/refs/heads/main/additional_nbs/standardizing_initial_data/{csv_file_raw_data}
+file_needed = "complexes_rawCSV_to_df.py"
+if not os.path.isfile(file_needed):
+    # !curl -OL -s https://raw.githubusercontent.com/fomightez/structurework/refs/heads/master/humap3-utilities/{file_needed}
+file_needed = "make_lookup_table_for_extra_info4complexes.py"
+if not os.path.isfile(file_needed):
+    # !curl -OL -s https://raw.githubusercontent.com/fomightez/structurework/refs/heads/master/humap3-utilities/{file_needed}
+file_needed = "two_comp_three_details_plus_table.ipy"
+if not os.path.isfile(file_needed):
+    # !curl -OL -s https://raw.githubusercontent.com/fomightez/structurework/refs/heads/master/humap3-utilities/{file_needed}
+file_needed = "look_for_proteins_going_missing.py"
+if not os.path.isfile(file_needed):
+    # !curl -OL -s https://raw.githubusercontent.com/fomightez/structurework/refs/heads/master/humap3-utilities/{file_needed}
+file_needed = "look_for_majority_complex_member_going_missing.py"
+if not os.path.isfile(file_needed):
+    # !curl -OL -s https://raw.githubusercontent.com/fomightez/structurework/refs/heads/master/humap3-utilities/{file_needed}
+
+# get the raw data into memory
+# !uv run -q complexes_rawCSV_to_df.py humap2_complexes_20200809InOrderMatched.csv
+import pandas as pd
+rd2_df = pd.read_pickle('raw_complexes_pickled_df.pkl')
+print("newline_character_placeholder") #so next stuff not way over on the right
+# !uv run -q complexes_rawCSV_to_df.py hu.MAP3.0_complexes_wConfidenceScores_total15326_wGenenames_20240922InOrderMatched.csv
+rd3_df = pd.read_pickle('raw_complexes_pickled_df.pkl')
+
+#
+#
+# --------
+
+# ## Analyze complexes in hu.MAP 2.0 vs. hu.MAP 3.0 for query_id_placeholder
+#
+
+search_term = "query_id_placeholder"
+
+# %run -i two_comp_three_details_plus_table.ipy
+
+#     
+# #### Check for disappearing proteins in complexes for query_id_placeholder
+#
+
+# %run -i look_for_proteins_going_missing.py
+
+# Above reports if something disappears with main focus on the corresponding complexes; however, the next cell will check if a protein obserevd in the majority of complexes with hu.MAP 20 data goes missing **entirely** in hu.MAP 3.0 data.
+
+# %run -i look_for_majority_complex_member_going_missing.py
+
+#
+# -----
+#
+# Enjoy!
+#
+# See my [humap3-binder repo](https://github.com/fomightez/humap3-binder) and [humap3-utilities](https://github.com/fomightez/structurework/humap3-utilities) for related information & resources for this notebook.
+#
+#
+#
+# -----
+#
+'''
+if not os.path.isfile(already_gave_notifications_indicator_file): 
+    with open(already_gave_notifications_indicator_file , 'w') as output_file:
+        output_file.write("This will signal to suppress confusing messages multiple times since Python outside of the rules seems to running twice.")
+# ---End of Additional, special settings----------------------------------------
+
+
+
+
+##----------------HELPER FUNCTIONS----------------------------------------------
+def write_string_to_file(s, fn):
+    '''
+    Takes a string, `s`, and a name for a file & writes the string to the file.
+    '''
+    with open(fn, 'w') as output_file:
+        output_file.write(s)
+
+
+
+
+
+# SNAKEMAKE RULES---------------------------------------------------------------
+
+rule all:
+    input:
+        results_archive
+
+# ---------------Individual Rules---------------------------------------------
+
+# Delete any generated files so can trigger full run easily after cleaning
+'''
+The `touch` commands added make sure files matching each and every pattern of
+output so that the `rm` commands don't throw an error.
+'''
+rule clean:
+    shell:
+        '''
+        touch {already_gave_notifications_indicator_file}
+        touch complexes_report_nbs_and_files18199xlkleFAKE.zip
+        touch Summary_report_humap2verse3_data_for_18199xlkleFAKE.ipynb
+        touch Summary_report_humap2verse3_data_for_18199xlkleFAKE.py
+        touch {csv_file_raw_data2}
+        touch {csv_file_raw_data}
+        touch {CSV2df_script_needed}
+        touch {lud_script_needed}
+        touch {tct_script_needed}
+        touch {lmiss_script_needed}
+        touch {lmmiss_script_needed}
+        rm {already_gave_notifications_indicator_file}
+        rm complexes_report_nbs_and_files*.zip
+        rm Summary_report_humap2verse3_data_for_*.ipynb
+        rm Summary_report_humap2verse3_data_for_*.py
+        rm {csv_file_raw_data}
+        rm {CSV2df_script_needed}
+        rm {lud_script_needed}
+        rm {tct_script_needed}
+        rm {lmiss_script_needed}
+        rm {lmmiss_script_needed}
+        '''
+
+
+# Use the table & make a Python script that will be used later to make notebook
+'''
+By including the python scripts as input, this rule will be run 
+again if the scripts are edited. (See about `wordcount.py` under 
+'Handling dependencies differently' as 
+https://carpentries-incubator.github.io/workflows-snakemake/03-wildcards/index.html
+'''
+rule read_table_and_create_py:
+    input:
+        text_file_to_use,
+        csv_file_raw_data,
+        CSV2df_script_needed
+    output: py_files
+    run:
+        for indx,row in df.iterrows():
+            info_tag= row.identifier
+            py_file_name = f"{prefix_to_use_for_report_nbs}{info_tag}.py"
+            stub_as_py = nb_stub_as_py # You cannot use an immutable string from
+            # the main namespace in a rule if you are going to change it. If it 
+            # remains unaltered, it works. The way around is to simply assign 
+            # a new variable name within the rule. HAS TO BE DIFFERENT NAME.
+            stub_as_py = stub_as_py.replace(
+                "query_id_placeholder",row.identifier)
+            stub_as_py = stub_as_py.replace(
+                "newline_character_placeholder","\\n") #need escape character or otherwise adds a newline to the stub being built and breaks syntax because line break ; will end up as `\n` in file produced on next line
+            stub_as_py = stub_as_py.replace(
+                "word_boundary_character_placeholder","\\b") #need escape character here too, see above
+            write_string_to_file(stub_as_py, py_file_name)
+
+
+
+
+# In Jupyter I made a template notebook and then converted it to Python script
+# that I thought I'd be able to paste into here because it worked in 
+# `bendIt_analysis.py` and pdbsum-binder.
+# After pasted in here and the docstring in the function (see below) fixed, I 
+# have replaced the items that will be swapped in for the individual notebook 
+# are represented with unique placeholders.
+# Converted the template notebook `making_stub_for_summary_report_humap2verse3_data_per_protein.ipynb` to a 
+# Python script I can paste in here using AFTER DELETING A DOCSTRING for the
+# extra code I had kept around but wasn't using. 
+# so that the quotes didn't mess up the stub being a long docstring:
+#!jupytext --to py making_stub_for_summary_report_humap2verse3_data_per_protein.ipynb
+# NOTES FOR USING JUPYTEXT IN THIS PROCESS
+# To convert a script to a notebook without running it; help at 
+# https://jupytext.readthedocs.io/en/latest/using-cli.html
+# !jupytext --to notebook making_stub_for_summary_report_humap2verse3_data_per_protein.py --output zzz.ipynb
+# To convert a script to a notebook and run it at same time
+#!jupytext --to notebook --execute making_stub_for_summary_report_humap2verse3_data_per_protein.py --output zzz.ipynb
+
+
+# Convert the python scripts to notebooks and run them
+'''
+USing Jupytext here, see the Snakefle this is largely based on in my pdbsum-binder repo for more on reasoning about how I came to use Jupytext for this.
+See just above about making the templates that get used to make the `.py` used here.
+
+I also added after the conversion step removing the input python scripts to 
+progress towards a cleaner interface where the generated notebooks are easier to
+see.
+'''
+rule convert_scripts_to_nb_and_run_using_jupytext:
+    input: prefix_to_use_for_report_nbs+"{details}.py"
+    output: prefix_to_use_for_report_nbs+"{details}.ipynb"
+    shell: 'jupytext --to notebook --execute {input} --output {output};rm {input}'
+
+
+
+
+
+
+
+# Create an archive with the executed nb_files
+'''
+This is to make an archive with everything one would want to download in a single archive.
+Plus do a little clean up.
+
+Zip is done with `--quiet` flag to do it quietly to avoid getting a big list in 
+output as snakemake runs that code & posts things like 
+" adding: Summary_report_humap2verse3_data_for_FBL.ipynb (deflated 83%)"
+'''
+rule make_archive:
+    input: nb_files
+    output: results_archive
+    shell:
+        '''
+        zip {output} {input} -q; echo "Be sure to download {output}."
+        rm {already_gave_notifications_indicator_file}
+        '''
