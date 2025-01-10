@@ -7,7 +7,6 @@ biopython
 seaborn
 scipy
 statsmodels
-nbgitpuller
 openpyxl
 sh
 snakemake
