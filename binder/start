@@ -5,7 +5,7 @@
 rm -rf binder
 rm README.md
 rm LICENSE
-rem .gitignore
+rm .gitignore
 
 
 # this must be last line according to 
