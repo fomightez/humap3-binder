@@ -6,7 +6,7 @@
 #`Make_me_humap2verse3_summary_for_these.txt` 
 # where each element on a separate line is an identifier.
 # 
-# Ezample
+# Example
 # To help clarify that, the following code between the dashed lines
 # can have the starting `#`s removed at the start of each line and that code can 
 # be run in a Jupyter notebook to make such a file with the list of identifiers,
