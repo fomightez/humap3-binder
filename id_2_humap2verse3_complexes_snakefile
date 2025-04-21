@@ -12,7 +12,7 @@
 # be run in a Jupyter notebook to make such a file with the list of identifiers,
 # each on a separate line:
 #-------------------------
-#%writefile Make_me_humap2verse3_summary_for_these.txt
+#%%writefile Make_me_humap2verse3_summary_for_these.txt
 #FBL
 #Q9NX24
 #XRN1
